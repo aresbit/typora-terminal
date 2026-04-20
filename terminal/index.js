@@ -1,0 +1,390 @@
+(function () {
+  "use strict";
+
+  if (window.__typoraClaudeTerminalLoaded) return;
+  window.__typoraClaudeTerminalLoaded = true;
+
+  var STYLE_ID = "typora-claude-terminal-style";
+  var FOOTER_ID = "footer-claude-terminal";
+  var PANEL_ID = "footer-claude-terminal-panel";
+  var OUTPUT_LIMIT = 120000;
+  var KEY_LAST_CWD = "typora-claude-terminal-last-cwd";
+
+  var state = {
+    isOpen: false,
+    child: null,
+    mode: "unknown", // interactive | bridge
+    outputEl: null,
+    inputEl: null,
+    cwdEl: null,
+    statusEl: null,
+    panelEl: null,
+    footerEl: null,
+    closeOutsideHandler: null,
+  };
+
+  function appendOutput(text) {
+    if (!state.outputEl) return;
+    state.outputEl.textContent += text;
+    if (state.outputEl.textContent.length > OUTPUT_LIMIT) {
+      state.outputEl.textContent = state.outputEl.textContent.slice(-OUTPUT_LIMIT);
+    }
+    state.outputEl.scrollTop = state.outputEl.scrollHeight;
+  }
+
+  function setStatus(text, type) {
+    if (!state.statusEl) return;
+    state.statusEl.textContent = text;
+    state.statusEl.className = "typora-claude-terminal-status " + (type || "normal");
+  }
+
+  function getBridgeRunner() {
+    if (!window.bridge || !window.bridge.callHandler) return null;
+    return function runCommand(command, cwd) {
+      return new Promise(function (resolve, reject) {
+        window.bridge.callHandler(
+          "controller.runCommand",
+          cwd ? { args: command, cwd: cwd } : { args: command },
+          function (result) {
+            var success = result && result[0];
+            var stdout = (result && result[1]) || "";
+            var stderr = (result && result[2]) || "";
+            if (success) resolve(stdout || stderr || "");
+            else reject(new Error(stderr || "Failed to run command via controller.runCommand"));
+          }
+        );
+      });
+    };
+  }
+
+  function resolveCwd() {
+    var cwd = state.cwdEl && state.cwdEl.value ? state.cwdEl.value.trim() : "";
+    if (cwd) {
+      try {
+        localStorage.setItem(KEY_LAST_CWD, cwd);
+      } catch (_e) {}
+      return cwd;
+    }
+    return "";
+  }
+
+  function sendInteractive(command, withNewLine) {
+    if (!state.child || !state.child.stdin) {
+      appendOutput("\n[terminal] shell is not running\n");
+      setStatus("Shell is not running", "warn");
+      return;
+    }
+    try {
+      state.child.stdin.write(command + (withNewLine ? "\n" : ""));
+    } catch (e) {
+      appendOutput("\n[terminal] failed to write stdin: " + String(e) + "\n");
+      setStatus("Failed writing to shell", "error");
+    }
+  }
+
+  function runBridgeCommand(command) {
+    var runner = getBridgeRunner();
+    if (!runner) {
+      appendOutput("\n[terminal] bridge runCommand is unavailable\n");
+      setStatus("No command bridge available", "error");
+      return;
+    }
+    var cwd = resolveCwd();
+    setStatus("Running command...", "normal");
+    runner(command, cwd)
+      .then(function (output) {
+        if (output) appendOutput(output.endsWith("\n") ? output : output + "\n");
+        setStatus("Command finished", "ok");
+      })
+      .catch(function (err) {
+        appendOutput("[error] " + (err && err.message ? err.message : String(err)) + "\n");
+        setStatus("Command failed", "error");
+      });
+  }
+
+  function startInteractiveShell() {
+    if (!(window.Files && window.Files.isNode && window.reqnode)) {
+      state.mode = "bridge";
+      appendOutput("\n[terminal] running in bridge mode (non-interactive).\n");
+      setStatus("Bridge mode", "warn");
+      return;
+    }
+    if (state.child) {
+      setStatus("Shell already running", "ok");
+      return;
+    }
+
+    var childProcess = window.reqnode("child_process");
+    var os = window.reqnode("os");
+    var platform = os.platform();
+    var shell = platform === "win32" ? "powershell.exe" : (window.process && window.process.env && window.process.env.SHELL) || "bash";
+    var cwd = resolveCwd() || (window.process && window.process.env && window.process.env.HOME) || undefined;
+
+    try {
+      var env = Object.assign({}, window.process ? window.process.env : {}, { TERM: "xterm-256color" });
+      var child = childProcess.spawn(shell, [], {
+        cwd: cwd,
+        env: env,
+        stdio: "pipe",
+      });
+      state.child = child;
+      state.mode = "interactive";
+
+      if (child.stdout) {
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", function (chunk) {
+          appendOutput(chunk);
+        });
+      }
+      if (child.stderr) {
+        child.stderr.setEncoding("utf8");
+        child.stderr.on("data", function (chunk) {
+          appendOutput(chunk);
+        });
+      }
+
+      child.on("error", function (err) {
+        appendOutput("\n[terminal] process error: " + (err && err.message ? err.message : String(err)) + "\n");
+        setStatus("Shell error", "error");
+      });
+
+      child.on("exit", function (code, signal) {
+        appendOutput("\n[terminal] shell exited (code=" + code + ", signal=" + signal + ")\n");
+        state.child = null;
+        setStatus("Shell exited", "warn");
+      });
+
+      appendOutput("\n[terminal] interactive shell started: " + shell + (cwd ? " (cwd=" + cwd + ")" : "") + "\n");
+      setStatus("Interactive shell ready", "ok");
+    } catch (e) {
+      state.child = null;
+      state.mode = "bridge";
+      appendOutput("\n[terminal] failed to spawn shell, fallback to bridge mode: " + String(e) + "\n");
+      setStatus("Fallback bridge mode", "warn");
+    }
+  }
+
+  function stopInteractiveShell() {
+    if (!state.child) return;
+    try {
+      state.child.kill("SIGTERM");
+    } catch (_e) {}
+    state.child = null;
+    setStatus("Shell stopped", "warn");
+  }
+
+  function sendCommand(command) {
+    var trimmed = (command || "").trim();
+    if (!trimmed) return;
+    appendOutput("\n$ " + trimmed + "\n");
+    if (state.mode === "interactive") {
+      sendInteractive(trimmed, true);
+      return;
+    }
+    runBridgeCommand(trimmed);
+  }
+
+  function ensureStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    var style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = [
+      "#" + FOOTER_ID + " { display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none; }",
+      "#" + FOOTER_ID + " .typora-claude-terminal-icon { font-size:12px; font-weight:700; letter-spacing:0.5px; }",
+      "#" + FOOTER_ID + " .typora-claude-terminal-arrow { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }",
+      "#" + PANEL_ID + " { position:fixed; right:12px; bottom:38px; width:min(760px, calc(100vw - 24px)); height:min(62vh, 560px); background:var(--bg-color, #fff); color:var(--text-color, #111); border:1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius:8px; box-shadow:0 8px 28px rgba(0,0,0,.22); z-index:9999; display:none; flex-direction:column; overflow:hidden; }",
+      "#" + PANEL_ID + ".open { display:flex; }",
+      "#" + PANEL_ID + " .typora-claude-terminal-header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-bottom:1px solid color-mix(in srgb, currentColor 16%, transparent); font-size:12px; }",
+      "#" + PANEL_ID + " .typora-claude-terminal-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }",
+      "#" + PANEL_ID + " button { border:1px solid color-mix(in srgb, currentColor 24%, transparent); background:transparent; color:inherit; border-radius:6px; padding:2px 8px; line-height:1.5; cursor:pointer; font-size:12px; }",
+      "#" + PANEL_ID + " button:hover { background:color-mix(in srgb, currentColor 10%, transparent); }",
+      "#" + PANEL_ID + " .typora-claude-terminal-output { flex:1; padding:10px; margin:0; overflow:auto; background:color-mix(in srgb, currentColor 3%, transparent); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; white-space:pre-wrap; word-break:break-word; }",
+      "#" + PANEL_ID + " .typora-claude-terminal-bottom { display:flex; flex-direction:column; gap:8px; padding:10px; border-top:1px solid color-mix(in srgb, currentColor 16%, transparent); }",
+      "#" + PANEL_ID + " .typora-claude-terminal-row { display:flex; gap:8px; align-items:center; }",
+      "#" + PANEL_ID + " input { width:100%; min-width:0; border:1px solid color-mix(in srgb, currentColor 22%, transparent); background:transparent; color:inherit; border-radius:6px; padding:6px 8px; font-size:12px; }",
+      "#" + PANEL_ID + " .typora-claude-terminal-status.ok { color:#12a150; }",
+      "#" + PANEL_ID + " .typora-claude-terminal-status.warn { color:#c17d00; }",
+      "#" + PANEL_ID + " .typora-claude-terminal-status.error { color:#c62828; }",
+    ].join("\n");
+    document.head.appendChild(style);
+  }
+
+  function renderPanel() {
+    if (state.panelEl) return;
+
+    var panel = document.createElement("div");
+    panel.id = PANEL_ID;
+    panel.innerHTML =
+      '<div class="typora-claude-terminal-header">' +
+      '  <strong>Claude Terminal</strong>' +
+      '  <div class="typora-claude-terminal-actions">' +
+      '    <button type="button" data-action="start">Start Shell</button>' +
+      '    <button type="button" data-action="claude">Run claude</button>' +
+      '    <button type="button" data-action="sigint">Ctrl+C</button>' +
+      '    <button type="button" data-action="restart">Restart</button>' +
+      '    <button type="button" data-action="clear">Clear</button>' +
+      '  </div>' +
+      '</div>' +
+      '<pre class="typora-claude-terminal-output"></pre>' +
+      '<div class="typora-claude-terminal-bottom">' +
+      '  <div class="typora-claude-terminal-row">' +
+      '    <input type="text" data-role="cwd" placeholder="Working directory (optional)" />' +
+      '    <span class="typora-claude-terminal-status">Initializing...</span>' +
+      '  </div>' +
+      '  <div class="typora-claude-terminal-row">' +
+      '    <input type="text" data-role="cmd" placeholder="Type command and press Enter" />' +
+      '  </div>' +
+      '</div>';
+
+    document.body.appendChild(panel);
+
+    state.panelEl = panel;
+    state.outputEl = panel.querySelector(".typora-claude-terminal-output");
+    state.inputEl = panel.querySelector('input[data-role="cmd"]');
+    state.cwdEl = panel.querySelector('input[data-role="cwd"]');
+    state.statusEl = panel.querySelector(".typora-claude-terminal-status");
+
+    var lastCwd = "";
+    try {
+      lastCwd = localStorage.getItem(KEY_LAST_CWD) || "";
+    } catch (_e) {}
+    if (lastCwd && state.cwdEl) state.cwdEl.value = lastCwd;
+
+    panel.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      var target = ev.target;
+      if (!(target instanceof HTMLElement)) return;
+      var action = target.getAttribute("data-action");
+      if (!action) return;
+
+      if (action === "start") {
+        startInteractiveShell();
+        return;
+      }
+      if (action === "claude") {
+        if (state.mode === "interactive" && state.child) {
+          sendInteractive("claude", true);
+        } else {
+          sendCommand("claude");
+        }
+        return;
+      }
+      if (action === "sigint") {
+        if (state.mode === "interactive" && state.child) {
+          try {
+            state.child.kill("SIGINT");
+            setStatus("Sent SIGINT", "warn");
+          } catch (e) {
+            appendOutput("\n[terminal] failed to send SIGINT: " + String(e) + "\n");
+            setStatus("SIGINT failed", "error");
+          }
+        } else {
+          setStatus("SIGINT is only available in interactive mode", "warn");
+        }
+        return;
+      }
+      if (action === "restart") {
+        stopInteractiveShell();
+        startInteractiveShell();
+        return;
+      }
+      if (action === "clear") {
+        if (state.outputEl) state.outputEl.textContent = "";
+        return;
+      }
+    });
+
+    if (state.inputEl) {
+      state.inputEl.addEventListener("keydown", function (ev) {
+        if (ev.key !== "Enter") return;
+        ev.preventDefault();
+        var cmd = state.inputEl.value;
+        state.inputEl.value = "";
+        sendCommand(cmd);
+      });
+    }
+
+    appendOutput("[terminal] plugin loaded\n");
+    startInteractiveShell();
+  }
+
+  function setPanelOpen(open) {
+    if (!state.panelEl) return;
+    state.isOpen = open;
+    if (open) {
+      state.panelEl.classList.add("open");
+      if (state.inputEl) state.inputEl.focus();
+      if (!state.closeOutsideHandler) {
+        state.closeOutsideHandler = function () {
+          setPanelOpen(false);
+        };
+        document.addEventListener("click", state.closeOutsideHandler);
+        var content = document.querySelector("content");
+        if (content) content.addEventListener("click", state.closeOutsideHandler);
+      }
+    } else {
+      state.panelEl.classList.remove("open");
+      if (state.closeOutsideHandler) {
+        document.removeEventListener("click", state.closeOutsideHandler);
+        var content2 = document.querySelector("content");
+        if (content2) content2.removeEventListener("click", state.closeOutsideHandler);
+        state.closeOutsideHandler = null;
+      }
+    }
+  }
+
+  function renderFooter() {
+    if (state.footerEl || document.getElementById(FOOTER_ID)) return;
+
+    var footer = document.querySelector("footer.ty-footer");
+    var item = document.createElement("div");
+    item.className = "footer-item footer-item-right";
+    item.id = FOOTER_ID;
+    item.setAttribute("ty-hint", "Claude Terminal");
+    item.innerHTML =
+      '<span class="typora-claude-terminal-icon">>_</span><span class="typora-claude-terminal-arrow"></span>';
+
+    item.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (!state.panelEl) renderPanel();
+      setPanelOpen(!state.isOpen);
+    });
+
+    if (footer) {
+      var firstRight = footer.querySelector(".footer-item-right");
+      if (firstRight) firstRight.insertAdjacentElement("beforebegin", item);
+      else footer.appendChild(item);
+    } else {
+      item.style.position = "fixed";
+      item.style.bottom = "6px";
+      item.style.right = "12px";
+      item.style.zIndex = "9999";
+      document.body.appendChild(item);
+    }
+    state.footerEl = item;
+  }
+
+  function bootstrap() {
+    ensureStyle();
+    renderFooter();
+    renderPanel();
+    setPanelOpen(false);
+    setStatus(state.mode === "interactive" ? "Interactive shell ready" : "Bridge mode", "ok");
+  }
+
+  function waitAndBootstrap() {
+    var tries = 0;
+    var timer = setInterval(function () {
+      tries += 1;
+      if (document.readyState === "complete" || document.querySelector("footer.ty-footer")) {
+        clearInterval(timer);
+        bootstrap();
+      } else if (tries > 120) {
+        clearInterval(timer);
+        bootstrap();
+      }
+    }, 250);
+  }
+
+  waitAndBootstrap();
+})();
