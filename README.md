@@ -1,6 +1,6 @@
-# Typora Claude Terminal
+# Typora Terminal
 
-Embed a lightweight terminal panel into Typora and run commands (including `claude`) directly.
+Embed a lightweight terminal panel into Typora and run commands (directly.
 
 ## Dependency
 
@@ -15,7 +15,7 @@ This integration currently targets the **Typora-Plugin** ecosystem (`/usr/share/
 2. Run installer:
 
 ```bash
-sudo ./terminal/scripts/install-claude-terminal-as-typora-plugin.sh
+sudo ./terminal/scripts/install-typora-terminal-as-typora-plugin.sh
 ```
 
 3. Restart Typora.
@@ -23,7 +23,7 @@ sudo ./terminal/scripts/install-claude-terminal-as-typora-plugin.sh
 If Typora resources are not at `/usr/share/typora/resources`, pass `TYPORA_RES`:
 
 ```bash
-sudo TYPORA_RES=/your/typora/resources ./terminal/scripts/install-claude-terminal-as-typora-plugin.sh
+sudo TYPORA_RES=/your/typora/resources ./terminal/scripts/install-typora-terminal-as-typora-plugin.sh
 ```
 
 ## Fix common issue (TOML conflict)
@@ -31,7 +31,7 @@ sudo TYPORA_RES=/your/typora/resources ./terminal/scripts/install-claude-termina
 If Typora-Plugin reports invalid TOML, run:
 
 ```bash
-sudo ./terminal/scripts/fix-claude-terminal-toml.sh
+sudo ./terminal/scripts/fix-typora-terminal-toml.sh
 ```
 
 If Typora-Plugin reports `EACCES` when writing settings:
@@ -44,7 +44,7 @@ sudo ./terminal/scripts/fix-typora-plugin-settings-permissions.sh
 
 - Open Typora.
 - Click `>_` icon in footer.
-- Use `Run claude` quick button or type commands and press Enter.
+- Type commands and press Enter.
 - The shell starts in interactive mode and prefers PTY wrapper (`script`) to improve CLI compatibility.
 
 ## Cross-machine reuse
@@ -60,7 +60,7 @@ Recommended rollout on another machine:
 ```bash
 git clone <this-repo>
 cd typora-terminal
-sudo ./terminal/scripts/install-claude-terminal-as-typora-plugin.sh
+sudo ./terminal/scripts/install-typora-terminal-as-typora-plugin.sh
 ```
 
 ## Notes

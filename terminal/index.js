@@ -1,14 +1,14 @@
 (function () {
   "use strict";
 
-  if (window.__typoraClaudeTerminalLoaded) return;
-  window.__typoraClaudeTerminalLoaded = true;
+  if (window.__typoraTerminalLoaded) return;
+  window.__typoraTerminalLoaded = true;
 
-  var STYLE_ID = "typora-claude-terminal-style";
-  var FOOTER_ID = "footer-claude-terminal";
-  var PANEL_ID = "footer-claude-terminal-panel";
+  var STYLE_ID = "typora-terminal-style";
+  var FOOTER_ID = "footer-typora-terminal";
+  var PANEL_ID = "footer-typora-terminal-panel";
   var OUTPUT_LIMIT = 120000;
-  var KEY_LAST_CWD = "typora-claude-terminal-last-cwd";
+  var KEY_LAST_CWD = "typora-terminal-last-cwd";
 
   var state = {
     isOpen: false,
@@ -51,7 +51,7 @@
   function setStatus(text, type) {
     if (!state.statusEl) return;
     state.statusEl.textContent = text;
-    state.statusEl.className = "typora-claude-terminal-status " + (type || "normal");
+    state.statusEl.className = "typora-terminal-status " + (type || "normal");
   }
 
   function getBridgeRunner() {
@@ -261,21 +261,21 @@
     style.id = STYLE_ID;
     style.textContent = [
       "#" + FOOTER_ID + " { display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none; }",
-      "#" + FOOTER_ID + " .typora-claude-terminal-icon { font-size:12px; font-weight:700; letter-spacing:0.5px; }",
-      "#" + FOOTER_ID + " .typora-claude-terminal-arrow { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }",
+      "#" + FOOTER_ID + " .typora-terminal-icon { font-size:12px; font-weight:700; letter-spacing:0.5px; }",
+      "#" + FOOTER_ID + " .typora-terminal-arrow { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }",
       "#" + PANEL_ID + " { position:fixed; right:12px; bottom:38px; width:min(760px, calc(100vw - 24px)); height:min(62vh, 560px); background:var(--bg-color, #fff); color:var(--text-color, #111); border:1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius:8px; box-shadow:0 8px 28px rgba(0,0,0,.22); z-index:9999; display:none; flex-direction:column; overflow:hidden; }",
       "#" + PANEL_ID + ".open { display:flex; }",
-      "#" + PANEL_ID + " .typora-claude-terminal-header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-bottom:1px solid color-mix(in srgb, currentColor 16%, transparent); font-size:12px; }",
-      "#" + PANEL_ID + " .typora-claude-terminal-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }",
+      "#" + PANEL_ID + " .typora-terminal-header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-bottom:1px solid color-mix(in srgb, currentColor 16%, transparent); font-size:12px; }",
+      "#" + PANEL_ID + " .typora-terminal-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }",
       "#" + PANEL_ID + " button { border:1px solid color-mix(in srgb, currentColor 24%, transparent); background:transparent; color:inherit; border-radius:6px; padding:2px 8px; line-height:1.5; cursor:pointer; font-size:12px; }",
       "#" + PANEL_ID + " button:hover { background:color-mix(in srgb, currentColor 10%, transparent); }",
-      "#" + PANEL_ID + " .typora-claude-terminal-output { flex:1; padding:10px; margin:0; overflow:auto; background:color-mix(in srgb, currentColor 3%, transparent); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; white-space:pre-wrap; word-break:break-word; }",
-      "#" + PANEL_ID + " .typora-claude-terminal-bottom { display:flex; flex-direction:column; gap:8px; padding:10px; border-top:1px solid color-mix(in srgb, currentColor 16%, transparent); }",
-      "#" + PANEL_ID + " .typora-claude-terminal-row { display:flex; gap:8px; align-items:center; }",
+      "#" + PANEL_ID + " .typora-terminal-output { flex:1; padding:10px; margin:0; overflow:auto; background:color-mix(in srgb, currentColor 3%, transparent); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; white-space:pre-wrap; word-break:break-word; }",
+      "#" + PANEL_ID + " .typora-terminal-bottom { display:flex; flex-direction:column; gap:8px; padding:10px; border-top:1px solid color-mix(in srgb, currentColor 16%, transparent); }",
+      "#" + PANEL_ID + " .typora-terminal-row { display:flex; gap:8px; align-items:center; }",
       "#" + PANEL_ID + " input { width:100%; min-width:0; border:1px solid color-mix(in srgb, currentColor 22%, transparent); background:transparent; color:inherit; border-radius:6px; padding:6px 8px; font-size:12px; }",
-      "#" + PANEL_ID + " .typora-claude-terminal-status.ok { color:#12a150; }",
-      "#" + PANEL_ID + " .typora-claude-terminal-status.warn { color:#c17d00; }",
-      "#" + PANEL_ID + " .typora-claude-terminal-status.error { color:#c62828; }",
+      "#" + PANEL_ID + " .typora-terminal-status.ok { color:#12a150; }",
+      "#" + PANEL_ID + " .typora-terminal-status.warn { color:#c17d00; }",
+      "#" + PANEL_ID + " .typora-terminal-status.error { color:#c62828; }",
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -286,23 +286,22 @@
     var panel = document.createElement("div");
     panel.id = PANEL_ID;
     panel.innerHTML =
-      '<div class="typora-claude-terminal-header">' +
-      '  <strong>Claude Terminal</strong>' +
-      '  <div class="typora-claude-terminal-actions">' +
+      '<div class="typora-terminal-header">' +
+      '  <strong>Typora Terminal</strong>' +
+      '  <div class="typora-terminal-actions">' +
       '    <button type="button" data-action="start">Start Shell</button>' +
-      '    <button type="button" data-action="claude">Run claude</button>' +
       '    <button type="button" data-action="sigint">Ctrl+C</button>' +
       '    <button type="button" data-action="restart">Restart</button>' +
       '    <button type="button" data-action="clear">Clear</button>' +
       '  </div>' +
       '</div>' +
-      '<pre class="typora-claude-terminal-output"></pre>' +
-      '<div class="typora-claude-terminal-bottom">' +
-      '  <div class="typora-claude-terminal-row">' +
+      '<pre class="typora-terminal-output"></pre>' +
+      '<div class="typora-terminal-bottom">' +
+      '  <div class="typora-terminal-row">' +
       '    <input type="text" data-role="cwd" placeholder="Working directory (optional)" />' +
-      '    <span class="typora-claude-terminal-status">Initializing...</span>' +
+      '    <span class="typora-terminal-status">Initializing...</span>' +
       '  </div>' +
-      '  <div class="typora-claude-terminal-row">' +
+      '  <div class="typora-terminal-row">' +
       '    <input type="text" data-role="cmd" placeholder="Type command and press Enter" />' +
       '  </div>' +
       '</div>';
@@ -310,10 +309,10 @@
     document.body.appendChild(panel);
 
     state.panelEl = panel;
-    state.outputEl = panel.querySelector(".typora-claude-terminal-output");
+    state.outputEl = panel.querySelector(".typora-terminal-output");
     state.inputEl = panel.querySelector('input[data-role="cmd"]');
     state.cwdEl = panel.querySelector('input[data-role="cwd"]');
-    state.statusEl = panel.querySelector(".typora-claude-terminal-status");
+    state.statusEl = panel.querySelector(".typora-terminal-status");
 
     var lastCwd = "";
     try {
@@ -330,14 +329,6 @@
 
       if (action === "start") {
         startInteractiveShell();
-        return;
-      }
-      if (action === "claude") {
-        if (state.mode === "interactive" && state.child) {
-          sendInteractive("claude", true);
-        } else {
-          sendCommand("claude");
-        }
         return;
       }
       if (action === "sigint") {
@@ -416,9 +407,9 @@
     var item = document.createElement("div");
     item.className = "footer-item footer-item-right";
     item.id = FOOTER_ID;
-    item.setAttribute("ty-hint", "Claude Terminal");
+    item.setAttribute("ty-hint", "Typora Terminal");
     item.innerHTML =
-      '<span class="typora-claude-terminal-icon">>_</span><span class="typora-claude-terminal-arrow"></span>';
+      '<span class="typora-terminal-icon">>_</span><span class="typora-terminal-arrow"></span>';
 
     item.addEventListener("click", function (ev) {
       ev.stopPropagation();
