@@ -86,8 +86,26 @@
     return "'" + s.replace(/'/g, "'\\''") + "'";
   }
 
+  function getHomeDir() {
+    var proc = typeof globalThis !== "undefined" ? globalThis.process : null;
+    if (!proc || !proc.env) return "";
+    return proc.env.HOME || proc.env.USERPROFILE || "";
+  }
+
+  function normalizeCwd(input) {
+    var raw = String(input || "").trim();
+    if (!raw) return "";
+    var home = getHomeDir();
+    if (raw === "~" && home) return home;
+    if (raw.indexOf("~/") === 0 && home) return home + raw.slice(1);
+    return raw;
+  }
+
   function resolveCwd() {
-    var cwd = state.cwdEl && state.cwdEl.value ? state.cwdEl.value.trim() : "";
+    var cwd = state.cwdEl && state.cwdEl.value ? normalizeCwd(state.cwdEl.value) : "";
+    if (state.cwdEl && cwd && state.cwdEl.value !== cwd) {
+      state.cwdEl.value = cwd;
+    }
     if (cwd) {
       try {
         localStorage.setItem(KEY_LAST_CWD, cwd);
@@ -273,6 +291,24 @@
     runBridgeCommand(trimmed);
   }
 
+  function applyCwdNow() {
+    var cwd = resolveCwd();
+    if (!cwd) {
+      setStatus("Working directory cleared", "warn");
+      return;
+    }
+
+    // Bridge mode uses cwd per command; just persist and show state.
+    if (state.mode !== "interactive" || !state.child) {
+      setStatus("Working directory set", "ok");
+      return;
+    }
+
+    // Interactive mode: apply immediately in current shell session.
+    sendInteractive("cd " + shQuote(cwd), true);
+    setStatus("Working directory updated", "ok");
+  }
+
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
     var style = document.createElement("style");
@@ -386,6 +422,20 @@
         var cmd = state.inputEl.value;
         state.inputEl.value = "";
         sendCommand(cmd);
+      });
+    }
+
+    if (state.cwdEl) {
+      state.cwdEl.addEventListener("keydown", function (ev) {
+        if (ev.key !== "Enter") return;
+        ev.preventDefault();
+        applyCwdNow();
+      });
+      state.cwdEl.addEventListener("change", function () {
+        applyCwdNow();
+      });
+      state.cwdEl.addEventListener("blur", function () {
+        applyCwdNow();
       });
     }
 
