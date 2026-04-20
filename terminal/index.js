@@ -23,9 +23,25 @@
     closeOutsideHandler: null,
   };
 
+  function stripAnsi(input) {
+    if (!input) return "";
+    var text = String(input);
+    // OSC ... BEL or ST
+    text = text.replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, "");
+    // CSI sequences
+    text = text.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+    // DCS/PM/APC single escape wrappers
+    text = text.replace(/\x1B[P^_][\s\S]*?\x1B\\/g, "");
+    // Single-char ESC sequences
+    text = text.replace(/\x1B[@-_]/g, "");
+    // C1 + other non-printable controls except LF/TAB/CR
+    text = text.replace(/[\x00-\x08\x0B-\x1F\x7F-\x9F]/g, "");
+    return text;
+  }
+
   function appendOutput(text) {
     if (!state.outputEl) return;
-    state.outputEl.textContent += text;
+    state.outputEl.textContent += stripAnsi(text);
     if (state.outputEl.textContent.length > OUTPUT_LIMIT) {
       state.outputEl.textContent = state.outputEl.textContent.slice(-OUTPUT_LIMIT);
     }
@@ -55,6 +71,17 @@
         );
       });
     };
+  }
+
+  function getReqNode() {
+    if (window.reqnode) return window.reqnode;
+    if (typeof globalThis !== "undefined" && globalThis.reqnode) return globalThis.reqnode;
+    return null;
+  }
+
+  function shQuote(value) {
+    var s = String(value);
+    return "'" + s.replace(/'/g, "'\\''") + "'";
   }
 
   function resolveCwd() {
@@ -103,7 +130,8 @@
   }
 
   function startInteractiveShell() {
-    if (!(window.Files && window.Files.isNode && window.reqnode)) {
+    var reqnode = getReqNode();
+    if (!reqnode) {
       state.mode = "bridge";
       appendOutput("\n[terminal] running in bridge mode (non-interactive).\n");
       setStatus("Bridge mode", "warn");
@@ -114,19 +142,55 @@
       return;
     }
 
-    var childProcess = window.reqnode("child_process");
-    var os = window.reqnode("os");
+    var childProcess = reqnode("child_process");
+    var fs = reqnode("fs");
+    var os = reqnode("os");
+    var pathMod = reqnode("path");
     var platform = os.platform();
-    var shell = platform === "win32" ? "powershell.exe" : (window.process && window.process.env && window.process.env.SHELL) || "bash";
-    var cwd = resolveCwd() || (window.process && window.process.env && window.process.env.HOME) || undefined;
+    var proc = typeof globalThis !== "undefined" ? globalThis.process : null;
+    var shell = platform === "win32" ? "powershell.exe" : (proc && proc.env && proc.env.SHELL) || "bash";
+    var shellName = pathMod.basename(shell);
+    var shellArgs = [];
+    if (platform !== "win32" && (shellName === "bash" || shellName === "zsh")) {
+      shellArgs = ["-l"];
+    }
+    var cwd = resolveCwd() || (proc && proc.env && proc.env.HOME) || undefined;
 
     try {
-      var env = Object.assign({}, window.process ? window.process.env : {}, { TERM: "xterm-256color" });
-      var child = childProcess.spawn(shell, [], {
-        cwd: cwd,
-        env: env,
-        stdio: "pipe",
-      });
+      var env = Object.assign({}, proc ? proc.env : {}, { TERM: "xterm-256color" });
+      var child;
+      var usePtyWrapper = false;
+      if (platform !== "win32") {
+        var scriptCandidates = [
+          (proc && proc.env && proc.env.HOMEBREW_PREFIX ? proc.env.HOMEBREW_PREFIX + "/bin/script" : ""),
+          "/home/linuxbrew/.linuxbrew/bin/script",
+          "/usr/bin/script",
+          "/bin/script",
+        ].filter(Boolean);
+        var scriptBin = scriptCandidates.find(function (p) {
+          try {
+            return fs.existsSync(p);
+          } catch (_e) {
+            return false;
+          }
+        });
+        if (scriptBin) {
+          var shellCmd = shQuote(shell) + (shellArgs.length ? " " + shellArgs.map(shQuote).join(" ") : "");
+          child = childProcess.spawn(scriptBin, ["-qfec", shellCmd, "/dev/null"], {
+            cwd: cwd,
+            env: env,
+            stdio: "pipe",
+          });
+          usePtyWrapper = true;
+        }
+      }
+      if (!child) {
+        child = childProcess.spawn(shell, shellArgs, {
+          cwd: cwd,
+          env: env,
+          stdio: "pipe",
+        });
+      }
       state.child = child;
       state.mode = "interactive";
 
@@ -154,7 +218,14 @@
         setStatus("Shell exited", "warn");
       });
 
-      appendOutput("\n[terminal] interactive shell started: " + shell + (cwd ? " (cwd=" + cwd + ")" : "") + "\n");
+      appendOutput(
+        "\n[terminal] interactive shell started" +
+          (usePtyWrapper ? " (pty wrapper)" : "") +
+          ": " +
+          shell +
+          (cwd ? " (cwd=" + cwd + ")" : "") +
+          "\n"
+      );
       setStatus("Interactive shell ready", "ok");
     } catch (e) {
       state.child = null;
@@ -272,8 +343,13 @@
       if (action === "sigint") {
         if (state.mode === "interactive" && state.child) {
           try {
-            state.child.kill("SIGINT");
-            setStatus("Sent SIGINT", "warn");
+            if (state.child.stdin) {
+              state.child.stdin.write("\u0003");
+              setStatus("Sent Ctrl+C", "warn");
+            } else {
+              state.child.kill("SIGINT");
+              setStatus("Sent SIGINT", "warn");
+            }
           } catch (e) {
             appendOutput("\n[terminal] failed to send SIGINT: " + String(e) + "\n");
             setStatus("SIGINT failed", "error");

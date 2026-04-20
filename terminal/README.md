@@ -2,31 +2,68 @@
 
 Embed a lightweight terminal panel into Typora and run commands (including `claude`) directly.
 
-## Install (manual)
+## Dependency
 
-1. Find Typora resource folder.
-2. Create folder `terminal` under Typora resource folder.
-3. Copy `terminal/index.js` from this repo into Typora resource folder's `terminal/` directory.
-4. Edit Typora HTML entry file:
-   - Windows/Linux: `window.html`
-   - macOS: `index.html`
-5. Add script tag after Typora app script:
+This integration currently targets the **Typora-Plugin** ecosystem (`/usr/share/typora/resources/plugin`).
 
-```html
-<script src="./terminal/index.js" defer="defer"></script>
+- If you already use Typora-Plugin: use the scripts below (recommended).
+- If you do not use Typora-Plugin: this repo's current installer does not auto-wire the plain `window.html` path.
+
+## Install (Typora-Plugin mode)
+
+1. Ensure `terminal/index.js` is up to date.
+2. Run installer:
+
+```bash
+sudo ./terminal/scripts/install-claude-terminal-as-typora-plugin.sh
 ```
 
-(For macOS, `defer` without explicit value also works.)
+3. Restart Typora.
+
+If Typora resources are not at `/usr/share/typora/resources`, pass `TYPORA_RES`:
+
+```bash
+sudo TYPORA_RES=/your/typora/resources ./terminal/scripts/install-claude-terminal-as-typora-plugin.sh
+```
+
+## Fix common issue (TOML conflict)
+
+If Typora-Plugin reports invalid TOML, run:
+
+```bash
+sudo ./terminal/scripts/fix-claude-terminal-toml.sh
+```
+
+If Typora-Plugin reports `EACCES` when writing settings:
+
+```bash
+sudo ./terminal/scripts/fix-typora-plugin-settings-permissions.sh
+```
 
 ## Usage
 
 - Open Typora.
 - Click `>_` icon in footer.
 - Use `Run claude` quick button or type commands and press Enter.
-- In Node-enabled Typora runtime it runs interactive shell mode.
-- In bridge-only runtime it runs one-shot command mode via `controller.runCommand`.
+- The shell starts in interactive mode and prefers PTY wrapper (`script`) to improve CLI compatibility.
+
+## Cross-machine reuse
+
+Yes, you can reuse on other machines directly if:
+
+- Typora is installed.
+- Typora-Plugin is installed at the standard path.
+- The install script is executed with sudo.
+
+Recommended rollout on another machine:
+
+```bash
+git clone <this-repo>
+cd typora-terminal
+sudo ./terminal/scripts/install-claude-terminal-as-typora-plugin.sh
+```
 
 ## Notes
 
 - Working directory can be set in the top input field and is persisted.
-- `Ctrl+C` button only works in interactive mode.
+- Output ANSI control sequences are filtered for readability.
