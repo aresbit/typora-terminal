@@ -104,5 +104,20 @@ mv "$TMP" "$SETTINGS_FILE"
 # Remove legacy plugin file so only typora_terminal loads.
 rm -f "$LEGACY_PLUGIN_FILE"
 
+# Ensure Typora runtime user can write user settings files.
+OWNER_USER="${SUDO_USER:-${USER:-}}"
+if [[ -n "$OWNER_USER" ]]; then
+  OWNER_GROUP="$(id -gn "$OWNER_USER" 2>/dev/null || true)"
+  if [[ -n "$OWNER_GROUP" ]]; then
+    chown "$OWNER_USER:$OWNER_GROUP" "$SETTINGS_FILE" || true
+    chmod 664 "$SETTINGS_FILE" || true
+    CUSTOM_USER_SETTINGS="$PLUGIN_ROOT/global/settings/custom_plugin.user.toml"
+    if [[ -f "$CUSTOM_USER_SETTINGS" ]]; then
+      chown "$OWNER_USER:$OWNER_GROUP" "$CUSTOM_USER_SETTINGS" || true
+      chmod 664 "$CUSTOM_USER_SETTINGS" || true
+    fi
+  fi
+fi
+
 echo "[OK] Installed plugin file: $PLUGIN_FILE"
 echo "[OK] Updated settings: $SETTINGS_FILE"

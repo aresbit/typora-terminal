@@ -20,6 +20,8 @@ sudo ./terminal/scripts/install-typora-terminal-as-typora-plugin.sh
 
 3. Restart Typora.
 
+The installer also auto-fixes ownership/permissions of Typora-Plugin user settings files.
+
 If Typora resources are not at `/usr/share/typora/resources`, pass `TYPORA_RES`:
 
 ```bash
