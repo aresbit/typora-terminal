@@ -21,7 +21,9 @@
     panelEl: null,
     footerEl: null,
     closeOutsideHandler: null,
+    destroyed: false,
   };
+  var bootstrapTimer = null;
 
   function stripAnsi(input) {
     if (!input) return "";
@@ -40,7 +42,7 @@
   }
 
   function appendOutput(text) {
-    if (!state.outputEl) return;
+    if (state.destroyed || !state.outputEl) return;
     state.outputEl.textContent += stripAnsi(text);
     if (state.outputEl.textContent.length > OUTPUT_LIMIT) {
       state.outputEl.textContent = state.outputEl.textContent.slice(-OUTPUT_LIMIT);
@@ -49,7 +51,7 @@
   }
 
   function setStatus(text, type) {
-    if (!state.statusEl) return;
+    if (state.destroyed || !state.statusEl) return;
     state.statusEl.textContent = text;
     state.statusEl.className = "typora-terminal-status " + (type || "normal");
   }
@@ -242,6 +244,22 @@
     } catch (_e) {}
     state.child = null;
     setStatus("Shell stopped", "warn");
+  }
+
+  function destroyTerminal() {
+    if (state.destroyed) return;
+    state.destroyed = true;
+    if (bootstrapTimer) {
+      clearInterval(bootstrapTimer);
+      bootstrapTimer = null;
+    }
+    if (state.closeOutsideHandler) {
+      document.removeEventListener("click", state.closeOutsideHandler);
+      var content = document.querySelector("content");
+      if (content) content.removeEventListener("click", state.closeOutsideHandler);
+      state.closeOutsideHandler = null;
+    }
+    stopInteractiveShell();
   }
 
   function sendCommand(command) {
@@ -441,17 +459,21 @@
 
   function waitAndBootstrap() {
     var tries = 0;
-    var timer = setInterval(function () {
+    bootstrapTimer = setInterval(function () {
       tries += 1;
       if (document.readyState === "complete" || document.querySelector("footer.ty-footer")) {
-        clearInterval(timer);
+        clearInterval(bootstrapTimer);
+        bootstrapTimer = null;
         bootstrap();
       } else if (tries > 120) {
-        clearInterval(timer);
+        clearInterval(bootstrapTimer);
+        bootstrapTimer = null;
         bootstrap();
       }
     }, 250);
   }
 
+  window.addEventListener("beforeunload", destroyTerminal);
+  window.addEventListener("unload", destroyTerminal);
   waitAndBootstrap();
 })();
